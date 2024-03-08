@@ -1,16 +1,17 @@
 {
   "configurations": [
-
     {
-        "type": "lldb",
-        "request": "launch",
-        "name": "Rust Debug Launch",
-        "program": "${workspaceRoot}/target/debug/${workspaceRootFolderName}",
-        "args": [],
-        "env": {},
-        "cwd": "${workspaceRoot}/target/debug/",
-        "sourceLanguages": ["rust"],
-        "preLaunchTask": "rust: cargo build"
+      "type": "lldb",
+      "request": "launch",
+      "name": "Rust Debug Launch",
+      "program": "${workspaceRoot}/target/debug/${workspaceRootFolderName}",
+      "args": [],
+      "env": {},
+      "cwd": "${workspaceRoot}/target/debug/",
+      "sourceLanguages": [
+        "rust"
+      ],
+      "preLaunchTask": "rust: cargo build"
     }
-]
+  ]
 }
