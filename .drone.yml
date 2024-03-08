@@ -10,8 +10,8 @@ steps:
 - name: test
   image: rust:1
   commands:
-  - cargo build --verbose --all
-  - cargo test --verbose --all
+  - cargo build
+  - cargo test
   - rustup component add clippy && cargo clippy -- -Dwarnings
   - cargo install cargo-audit && cargo audit
 
