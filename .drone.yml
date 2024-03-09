@@ -8,7 +8,7 @@ platform:
 
 steps:
 - name: test
-  image: rust:1
+  image: rustlang/rust:nightly
   commands:
   - cargo build
   - cargo test
