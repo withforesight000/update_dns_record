@@ -2,6 +2,7 @@ use reqwest::blocking::Response;
 
 #[cfg(test)]
 use mockall::{automock, predicate::*};
+use serde_json::Value;
 use std::fmt;
 
 pub struct ReqwestClient {
@@ -27,7 +28,7 @@ pub trait HttpClient {
         &self,
         url: &str,
         bearer_token: &str,
-        req_body: &str,
+        req_body: &Value,
     ) -> Result<Response, Box<dyn std::error::Error>>;
 }
 
@@ -52,7 +53,7 @@ impl HttpClient for ReqwestClient {
         &self,
         url: &str,
         bearer_token: &str,
-        req_body: &str,
+        req_body: &Value,
     ) -> Result<Response, Box<dyn std::error::Error>> {
         let response = self
             .client

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use reqwest::{self, StatusCode};
+use reqwest::StatusCode;
 use serde_json::{json, Value};
 
 use crate::errors::ClientError;
@@ -42,7 +42,7 @@ impl<T: HttpClient> CloudflareClient<T> {
                         Err(error) => Err(ClientError::BodyError(error)),
                     }
                 }
-                other => Err(ClientError::StatusCodeError(other)),
+                other => Err(ClientError::StatusCodeError(other, response.text().unwrap())),
             },
             Err(error) => Err(ClientError::RequestError(error)),
         }
@@ -78,6 +78,8 @@ impl<T: HttpClient> CloudflareClient<T> {
         &self,
         record_id: &Value,
         record: &Value,
+        name: &str,
+        r#type: &str
     ) -> Result<HashMap<String, Value>, ClientError> {
         let url = format!(
             "{}/zones/{}/dns_records/{}",
@@ -85,11 +87,11 @@ impl<T: HttpClient> CloudflareClient<T> {
             self.zone_id,
             record_id.as_str().unwrap()
         );
-        let req_body = json!({"content": record});
+        let req_body = json!({"content": record, "name": name, "type": r#type});
         let response = self.client.patch_with_bearer_token(
             &url,
             self.api_token.as_str(),
-            req_body.to_string().as_str(),
+            &req_body,
         );
         self.handle_response(response)
     }
@@ -100,7 +102,7 @@ mod tests {
     use super::*;
     use crate::http_client::{MockHttpClient, MockNetworkError, ReqwestClient};
 
-    use mockito::{self, Mock, ServerGuard};
+    use mockito::{Mock, ServerGuard};
 
     struct TestContext {
         server: ServerGuard,
@@ -195,7 +197,7 @@ mod tests {
         let err = client.get_dns_records().unwrap_err();
 
         match err {
-            ClientError::StatusCodeError(status_code) => {
+            ClientError::StatusCodeError(status_code, _) => {
                 assert_eq!(status_code, StatusCode::INTERNAL_SERVER_ERROR);
             }
             _ => panic!("Expected StatusCodeError"),
@@ -209,7 +211,7 @@ mod tests {
         let mut mock = MockHttpClient::new();
         mock.expect_get_with_bearer_token()
             .times(1)
-            .returning(|_, _| Err(Box::new(MockNetworkError{})));
+            .returning(|_, _| Err(Box::new(MockNetworkError {})));
 
         let client = CloudflareClient::new(
             mock,

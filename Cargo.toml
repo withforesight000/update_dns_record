@@ -7,11 +7,11 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.1", features = ["derive", "env"] }
-reqwest = { version = "0.11", features = ["blocking", "json"] }
+local-ip-address = "0.6.1"
+# workaround for crosscompile
+reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0.114" }
-# workaround for cross compile
-openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
 mockall = "0.12.1"
@@ -24,3 +24,4 @@ lto = true
 overflow-checks = true
 codegen-units = 1
 panic = "abort"
+strip = true
