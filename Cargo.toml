@@ -8,10 +8,12 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.1", features = ["derive", "env"] }
 local-ip-address = "0.6.1"
+nix = { version = "0.28.0", features = ["fs"] }
 # workaround for crosscompile
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0.114" }
+syslog = "6.1.0"
 
 [dev-dependencies]
 mockall = "0.12.1"

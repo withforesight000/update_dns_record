@@ -1,14 +1,19 @@
 #![feature(ip)]
+use std::{io, os::fd::AsRawFd, process::exit};
+
 use clap::Parser;
 use get_ip_addr::{IPAddr, LocalIPAddressClient};
 use http_client::ReqwestClient;
 
-use std::process::exit;
+use nix::unistd::isatty;
+
+use crate::logger::Log;
 
 mod cloudflare_client;
 mod errors;
 mod get_ip_addr;
 mod http_client;
+mod logger;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -34,6 +39,10 @@ struct Args {
     dry_run: bool,
 }
 
+fn has_controlling_terminal() -> bool {
+    isatty(io::stdout().as_raw_fd()).unwrap_or(false)
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -46,24 +55,30 @@ fn main() {
         .get_global_ip_addr(&v4_int)
         .unwrap_or_else(|error| {
             eprintln!("{}", error);
-            exit(1);
+            exit(1)
         });
     let v6_ip = ip_addr_client
         .client
         .get_global_ip_addr(&v6_int)
         .unwrap_or_else(|error| {
             eprintln!("{}", error);
-            exit(1);
+            exit(1)
         });
 
+    let mut logger = if has_controlling_terminal() {
+        Box::new(logger::StdOutLogger::new()) as Box<dyn Log>
+    } else {
+        Box::new(logger::SyslogLogger::new()) as Box<dyn Log>
+    };
+
     if args.dry_run {
-        println!("Would update A record to {}", v4_ip);
-        println!("Would update AAAA record to {}", v6_ip);
+        logger.log_info(format!("Would update A record to {}", v4_ip).as_str());
+        logger.log_info(format!("Would update AAAA record to {}", v6_ip).as_str());
         return;
     }
 
-    println!("Would update A record to {} from {}", v4_ip, &v4_int);
-    println!("Would update AAAA record to {} from {}", v6_ip, &v6_int);
+    logger.log_info(format!("Would update A record to {}", v4_ip).as_str());
+    logger.log_info(format!("Would update AAAA record to {}", v6_ip).as_str());
 
     let client = cloudflare_client::CloudflareClient::new(
         ReqwestClient::new(),
@@ -72,14 +87,14 @@ fn main() {
         args.zone_id,
     );
     let dns_records = client.get_dns_records().unwrap_or_else(|error| {
-        eprintln!("{}", error);
+        logger.log_error(format!("{}", error).as_str());
         exit(1);
     });
 
     let target_dns_records = client
         .find_record_ids(dns_records, &args.record_name)
         .unwrap_or_else(|error| {
-            eprintln!("{}", error);
+            logger.log_error(format!("{}", error).as_str());
             exit(1);
         });
 
@@ -88,12 +103,12 @@ fn main() {
             .iter()
             .find(|record| record["type"].as_str().unwrap() == "A")
             .unwrap_or_else(|| {
-                eprintln!("Failed to find A record");
+                logger.log_error("Failed to find A record");
                 exit(1);
             });
 
         let a_record_id = a_record.get("id").unwrap_or_else(|| {
-            eprintln!("Failed to find content");
+            logger.log_error("Failed to find content");
             exit(1);
         });
 
@@ -108,7 +123,7 @@ fn main() {
                 eprintln!("{}", error);
                 exit(1);
             });
-        println!("updated A record to {:?}", v4_ip.to_string());
+        logger.log_info(format!("updated A record to {:?}", v4_ip).as_str());
     }
 
     if !v6_int.is_empty() {
@@ -116,12 +131,12 @@ fn main() {
             .iter()
             .find(|record| record["type"].as_str().unwrap() == "AAAA")
             .unwrap_or_else(|| {
-                eprintln!("Failed to find AAAA record");
+                logger.log_error("Failed to find AAAA record");
                 exit(1);
             });
 
         let aaaa_record_id = aaaa_record.get("id").unwrap_or_else(|| {
-            eprintln!("Failed to find content");
+            logger.log_error("Failed to find content");
             exit(1);
         });
 
@@ -136,6 +151,6 @@ fn main() {
                 eprintln!("{}", error);
                 exit(1);
             });
-        println!("updated AAAA record to {:?}", v6_ip.to_string());
+        logger.log_info(format!("updated AAAA record to {:?}", v6_ip).as_str());
     }
 }
