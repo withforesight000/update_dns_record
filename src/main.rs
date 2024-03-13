@@ -1,13 +1,9 @@
 #![feature(ip)]
-use std::{io, os::fd::AsRawFd, process::exit};
+use std::process::exit;
 
 use clap::Parser;
 use get_ip_addr::{IPAddr, LocalIPAddressClient};
 use http_client::ReqwestClient;
-
-use nix::unistd::isatty;
-
-use crate::logger::Log;
 
 mod cloudflare_client;
 mod errors;
@@ -39,46 +35,59 @@ struct Args {
     dry_run: bool,
 }
 
-fn has_controlling_terminal() -> bool {
-    isatty(io::stdout().as_raw_fd()).unwrap_or(false)
-}
-
 fn main() {
     let args = Args::parse();
 
-    let v4_int = args.v4_int;
-    let v6_int = args.v6_int;
-
     let ip_addr_client = get_ip_addr::IPAddrClient::new(LocalIPAddressClient::new());
-    let v4_ip = ip_addr_client
-        .client
-        .get_global_ip_addr(&v4_int)
-        .unwrap_or_else(|error| {
-            eprintln!("{}", error);
-            exit(1)
-        });
-    let v6_ip = ip_addr_client
-        .client
-        .get_global_ip_addr(&v6_int)
-        .unwrap_or_else(|error| {
-            eprintln!("{}", error);
-            exit(1)
-        });
-
-    let mut logger = if has_controlling_terminal() {
-        Box::new(logger::StdOutLogger::new()) as Box<dyn Log>
-    } else {
-        Box::new(logger::SyslogLogger::new()) as Box<dyn Log>
-    };
-
-    if args.dry_run {
-        logger.log_info(format!("Would update A record to {}", v4_ip).as_str());
-        logger.log_info(format!("Would update AAAA record to {}", v6_ip).as_str());
-        return;
+    if args.v4_int.is_empty() && args.v6_int.is_empty() {
+        eprintln!("At least one of v4_int or v6_int must be set");
+        exit(1);
     }
 
-    logger.log_info(format!("Would update A record to {}", v4_ip).as_str());
-    logger.log_info(format!("Would update AAAA record to {}", v6_ip).as_str());
+    let v4_ip = if !args.v4_int.is_empty() {
+        let v4_ip = ip_addr_client.client.get_global_ip_addr(&args.v4_int);
+        match v4_ip {
+            Ok(ip) => Some(ip),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    let v6_ip = if !args.v6_int.is_empty() {
+        let v6_ip = ip_addr_client.client.get_global_ip_addr(&args.v6_int);
+        match v6_ip {
+            Ok(ip) => Some(ip),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    let mut logger = logger::new();
+
+    if let Some(v4_ip) = v4_ip {
+        logger.log_info(
+            format!(
+                "going to update A record to {} based on interface: {}",
+                v4_ip, &args.v4_int
+            )
+            .as_str(),
+        );
+    }
+    if let Some(v6_ip) = v6_ip {
+        logger.log_info(
+            format!(
+                "going to update AAAA record to {} based on interface: {}",
+                v6_ip, &args.v6_int
+            )
+            .as_str(),
+        );
+    }
+
+    if args.dry_run {
+        return;
+    }
 
     let client = cloudflare_client::CloudflareClient::new(
         ReqwestClient::new(),
@@ -98,7 +107,7 @@ fn main() {
             exit(1);
         });
 
-    if !v4_int.is_empty() {
+    if let Some(v4_ip) = v4_ip {
         let a_record = target_dns_records
             .iter()
             .find(|record| record["type"].as_str().unwrap() == "A")
@@ -126,7 +135,7 @@ fn main() {
         logger.log_info(format!("updated A record to {:?}", v4_ip).as_str());
     }
 
-    if !v6_int.is_empty() {
+    if let Some(v6_ip) = v6_ip {
         let aaaa_record = target_dns_records
             .iter()
             .find(|record| record["type"].as_str().unwrap() == "AAAA")
