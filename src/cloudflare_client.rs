@@ -75,7 +75,7 @@ pub fn filter_by_record_name(
 }
 
 pub fn filter_by_record_type(
-    dns_records: &Vec<Value>,
+    dns_records: &[Value],
     record_type: &str,
 ) -> Result<Value, ClientError> {
     let record = dns_records
