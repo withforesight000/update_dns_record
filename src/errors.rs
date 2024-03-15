@@ -5,7 +5,8 @@ pub enum ClientError {
     // ResponseError(reqwest::Error),
     StatusCodeError(reqwest::StatusCode, String),
     BodyError(reqwest::Error),
-    RecordNotFound
+    RecordNotFound,
+    MultipleRecordsFound(Vec<serde_json::Value>)
 }
 
 impl fmt::Display for ClientError {
@@ -25,6 +26,9 @@ impl fmt::Display for ClientError {
             }
             ClientError::RecordNotFound => {
                 write!(f, "Failed to find record from response")
+            }
+            ClientError::MultipleRecordsFound(record) => {
+                write!(f, "Failed to filter to one record: {:?}", record)
             }
         }
     }

@@ -100,21 +100,18 @@ fn main() {
         exit(1);
     });
 
-    let target_dns_records = client
-        .find_record_ids(dns_records, &args.record_name)
+    let target_dns_records = cloudflare_client::filter_by_record_name(dns_records, &args.record_name)
         .unwrap_or_else(|error| {
             logger.log_error(format!("{}", error).as_str());
             exit(1);
         });
 
     if let Some(v4_ip) = v4_ip {
-        let a_record = target_dns_records
-            .iter()
-            .find(|record| record["type"].as_str().unwrap() == "A")
-            .unwrap_or_else(|| {
-                logger.log_error("Failed to find A record");
-                exit(1);
-            });
+        let a_record = cloudflare_client::filter_by_record_type(&target_dns_records, "A")
+        .unwrap_or_else(|err| {
+            logger.log_error(format!("Failed to find A record: {}", err).as_str());
+            exit(1);
+        });
 
         let a_record_id = a_record.get("id").unwrap_or_else(|| {
             logger.log_error("Failed to find content");
@@ -136,13 +133,11 @@ fn main() {
     }
 
     if let Some(v6_ip) = v6_ip {
-        let aaaa_record = target_dns_records
-            .iter()
-            .find(|record| record["type"].as_str().unwrap() == "AAAA")
-            .unwrap_or_else(|| {
-                logger.log_error("Failed to find AAAA record");
-                exit(1);
-            });
+        let aaaa_record = cloudflare_client::filter_by_record_type(&target_dns_records, "AAAA")
+        .unwrap_or_else(|err| {
+            logger.log_error(format!("Failed to find A record: {}", err).as_str());
+            exit(1);
+        });
 
         let aaaa_record_id = aaaa_record.get("id").unwrap_or_else(|| {
             logger.log_error("Failed to find content");
