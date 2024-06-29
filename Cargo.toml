@@ -6,18 +6,23 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = { version = "4.5.1", features = ["derive", "env"] }
-local-ip-address = "0.6.1"
-nix = { version = "0.28.0", features = ["fs"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+http = "1.1"
+local-ip-address = "0.6"
+nix = { version = "0.29", features = ["fs"] }
 # workaround for crosscompile
-reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "rustls-tls"] }
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = { version = "1.0.114" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
 syslog = "6.1.0"
 
 [dev-dependencies]
-mockall = "0.12.1"
-mockito = "1.3.0"
+mockall = "0.12"
+test-context = "0.3"
+
+[profile.dev]
+debug = true
+opt-level = 0
 
 [profile.release]
 opt-level = "z"

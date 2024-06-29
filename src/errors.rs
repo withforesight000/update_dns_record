@@ -1,7 +1,8 @@
 use std::fmt;
 
+#[derive(Debug)]
 pub enum ClientError {
-    RequestError(Box<dyn std::error::Error>),
+    NetworkError(Box<dyn std::error::Error>),
     // ResponseError(reqwest::Error),
     StatusCodeError(reqwest::StatusCode, String),
     BodyError(reqwest::Error),
@@ -12,7 +13,7 @@ pub enum ClientError {
 impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ClientError::RequestError(error) => {
+            ClientError::NetworkError(error) => {
                 write!(f, "Failed to make request to Cloudflare: {}", *error)
             }
             // ClientError::ResponseError(error) => {
