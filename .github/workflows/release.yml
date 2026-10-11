@@ -112,7 +112,7 @@ jobs:
           sha256sum --check --strict SHA256SUMS
       - name: Create or resume draft and upload assets
         run: |
-          gh api "repos/$GH_REPO/releases" > releases.json
+          gh api --paginate "repos/$GH_REPO/releases" > releases.json
           release_id=$(jq -r --arg tag "$VERSION" '.[] | select(.tag_name == $tag) | .id' releases.json)
           if test -n "$release_id"; then
             test "$(jq -r --arg tag "$VERSION" '.[] | select(.tag_name == $tag) | .draft' releases.json)" = true

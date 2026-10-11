@@ -12,6 +12,7 @@
 
 ## Prerequisites
 - To build from source: the pinned Rust nightly toolchain (see `rust-toolchain.toml`).
+- To run the release-workflow regression tests: Python 3, Bash, and `jq`.
 - To use release binaries: GNU/Linux with glibc 2.35 or newer (Ubuntu 22.04 or newer), on amd64 or arm64.
 - An up-to-date system CA certificate store (for example, the `ca-certificates` package on Ubuntu). Starting with 1.1.0, reqwest's Rustls backend validates HTTPS certificates using the platform trust store.
 - A terminal for stdout logging, or a local syslog service for unattended execution.
@@ -81,6 +82,7 @@ Run the regression suite and code checks with the pinned toolchain:
 cargo test --locked --all-targets
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
+python3 tests/release_workflow.py
 ```
 
 The update workflow accepts injected IP discovery, DNS operations, and logger
@@ -93,8 +95,8 @@ match the Cargo package version. Tag pushes run checks and release builds,
 verify both archives, upload them with `SHA256SUMS` to a draft, and publish the
 complete release. Separate native jobs download and execute the published
 archives. A failed upload or draft verification leaves the release unpublished;
-a rerun can resume the same draft. Published releases are never overwritten by
-the workflow. Post-publication fixes use a new patch version.
+a rerun searches every release-list page to resume the same draft. Published
+releases are never overwritten by the workflow. Post-publication fixes use a new patch version.
 
 The arm64 CI runner overrides the existing cross-compilation linker setting
 with `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=cc` for native builds.
