@@ -1,4 +1,4 @@
-use std::{io, os::fd::AsRawFd};
+use std::io;
 
 use nix::unistd::isatty;
 use syslog::{Formatter3164, LoggerBackend};
@@ -9,7 +9,7 @@ pub trait Logger {
 }
 
 fn has_controlling_terminal() -> bool {
-    isatty(io::stdout().as_raw_fd()).unwrap_or(false)
+    isatty(io::stdout()).unwrap_or(false)
 }
 
 pub fn new() -> Box<dyn Logger> {

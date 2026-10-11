@@ -13,6 +13,7 @@
 ## Prerequisites
 - To build from source: the pinned Rust nightly toolchain (see `rust-toolchain.toml`).
 - To use release binaries: GNU/Linux with glibc 2.35 or newer (Ubuntu 22.04 or newer), on amd64 or arm64.
+- An up-to-date system CA certificate store (for example, the `ca-certificates` package on Ubuntu). Starting with 1.1.0, reqwest's Rustls backend validates HTTPS certificates using the platform trust store.
 - A terminal for stdout logging, or a local syslog service for unattended execution.
 - Cloudflare API token with permissions to read and edit DNS records in the target zone.
 
@@ -27,7 +28,7 @@ For example, with both archives and `SHA256SUMS` in the current directory:
 
 ```bash
 sha256sum --check SHA256SUMS
-tar -xzf update_dns_record-1.0.0-linux-arm64.tar.gz
+tar -xzf update_dns_record-1.1.0-linux-arm64.tar.gz
 ./update_dns_record --version
 ```
 
