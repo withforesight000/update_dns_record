@@ -1,9 +1,8 @@
 use reqwest::blocking::Response;
 
 #[cfg(test)]
-use mockall::{automock, predicate::*};
+use mockall::automock;
 use serde_json::Value;
-use std::fmt;
 
 pub struct ReqwestClient {
     client: reqwest::blocking::Client,
@@ -68,14 +67,3 @@ impl HttpClient for ReqwestClient {
         }
     }
 }
-
-#[derive(Debug)]
-pub struct MockNetworkError;
-
-impl fmt::Display for MockNetworkError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Mock network error")
-    }
-}
-
-impl std::error::Error for MockNetworkError {}

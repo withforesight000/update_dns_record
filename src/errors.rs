@@ -7,7 +7,7 @@ pub enum ClientError {
     StatusCodeError(reqwest::StatusCode, String),
     BodyError(reqwest::Error),
     RecordNotFound,
-    MultipleRecordsFound(Vec<serde_json::Value>)
+    MultipleRecordsFound(Vec<serde_json::Value>),
 }
 
 impl fmt::Display for ClientError {
@@ -20,7 +20,11 @@ impl fmt::Display for ClientError {
             //     write!(f, "Failed to get response from Cloudflare: {}", error)
             // }
             ClientError::StatusCodeError(status_code, resp_body) => {
-                write!(f, "Failed to fetch 200 OK from Cloudflare: {} {}", status_code, resp_body)
+                write!(
+                    f,
+                    "Failed to fetch 200 OK from Cloudflare: {} {}",
+                    status_code, resp_body
+                )
             }
             ClientError::BodyError(error) => {
                 write!(f, "Failed to fetch body from Cloudflare: {}", error)
@@ -34,4 +38,3 @@ impl fmt::Display for ClientError {
         }
     }
 }
-

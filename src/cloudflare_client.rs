@@ -6,6 +6,17 @@ use serde_json::{json, Value};
 use crate::errors::ClientError;
 
 use crate::http_client::HttpClient;
+pub trait DnsClient {
+    fn get_dns_records(&self) -> Result<HashMap<String, Value>, ClientError>;
+    fn update_record(
+        &self,
+        record_id: &Value,
+        record: &Value,
+        name: &str,
+        record_type: &str,
+    ) -> Result<HashMap<String, Value>, ClientError>;
+}
+
 pub struct CloudflareClient<T: HttpClient> {
     client: T,
     api_token: String,
@@ -54,6 +65,22 @@ impl<T: HttpClient> CloudflareClient<T> {
             self.client
                 .patch_with_bearer_token(&url, self.api_token.as_str(), &req_body);
         handle_response(response)
+    }
+}
+
+impl<T: HttpClient> DnsClient for CloudflareClient<T> {
+    fn get_dns_records(&self) -> Result<HashMap<String, Value>, ClientError> {
+        CloudflareClient::get_dns_records(self)
+    }
+
+    fn update_record(
+        &self,
+        record_id: &Value,
+        record: &Value,
+        name: &str,
+        record_type: &str,
+    ) -> Result<HashMap<String, Value>, ClientError> {
+        CloudflareClient::update_record(self, record_id, record, name, record_type)
     }
 }
 
@@ -397,12 +424,7 @@ mod tests {
 
             mock.expect_get_with_bearer_token()
                 .times(1)
-                .returning(|_, _| {
-                    Err(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "OTHER",
-                    )))
-                });
+                .returning(|_, _| Err(Box::new(std::io::Error::other("OTHER"))));
 
             let client = CloudflareClient::new(
                 mock,
@@ -511,12 +533,7 @@ mod tests {
 
             mock.expect_patch_with_bearer_token()
                 .times(1)
-                .returning(|_, _, _| {
-                    Err(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "OTHER",
-                    )))
-                });
+                .returning(|_, _, _| Err(Box::new(std::io::Error::other("OTHER"))));
 
             let client = CloudflareClient::new(
                 mock,
