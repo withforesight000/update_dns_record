@@ -1,5 +1,5 @@
 use crate::cloudflare_client::{filter_by_record_name, filter_by_record_type, DnsClient};
-use crate::get_ip_addr::IPAddr;
+use crate::get_ip_addr::{AddressFamily, IPAddr};
 use crate::logger::Logger;
 use crate::Args;
 
@@ -26,16 +26,36 @@ where
             "At least one of v4_int or v6_int must be set".into(),
         ));
     }
-    let addresses =
-        [(&args.v4_int, "A"), (&args.v6_int, "AAAA")].map(|(interface, record_type)| {
-            let address = if interface.is_empty() {
-                None
-            } else {
-                ip.get_global_ip_addr(interface).ok()
-            };
-            (interface, record_type, address)
-        });
+    let mut discovery_errors = Vec::new();
+    let addresses = [
+        (&args.v4_int, "A", AddressFamily::V4),
+        (&args.v6_int, "AAAA", AddressFamily::V6),
+    ]
+    .map(|(interface, record_type, family)| {
+        let address = if interface.is_empty() {
+            None
+        } else {
+            match ip.get_global_ip_addr(interface, family) {
+                Ok(address) => Some(address),
+                Err(error) => {
+                    discovery_errors.push(format!(
+                        "Failed to discover {record_type} address on interface {interface}: {error}"
+                    ));
+                    None
+                }
+            }
+        };
+        (interface, record_type, address)
+    });
     let mut logger = logger_factory();
+    for error in &discovery_errors {
+        logger.log_error(error);
+    }
+    let discovery_result = if discovery_errors.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Logged)
+    };
     for (interface, record_type, address) in &addresses {
         if let Some(address) = address {
             logger.log_info(&format!(
@@ -44,8 +64,8 @@ where
             ));
         }
     }
-    if args.dry_run {
-        return Ok(());
+    if args.dry_run || addresses.iter().all(|(_, _, address)| address.is_none()) {
+        return discovery_result;
     }
 
     let dns = dns_factory();
@@ -78,7 +98,7 @@ where
             logger.log_info(&format!("updated {} record to {:?}", record_type, address));
         }
     }
-    Ok(())
+    discovery_result
 }
 
 #[cfg(test)]

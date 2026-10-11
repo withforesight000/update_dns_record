@@ -17,7 +17,13 @@ mod logger;
 #[command(version, about, long_about = None)]
 struct Args {
     /// API token for Cloudflare
-    #[arg(short, long, required = true, env = "CLOUDFLARE_API_TOKEN")]
+    #[arg(
+        short,
+        long,
+        required = true,
+        env = "CLOUDFLARE_API_TOKEN",
+        hide_env_values = true
+    )]
     api_token: String,
     /// Zone ID for Cloudflare
     #[arg(short, long, required = true, env = "CLOUDFLARE_ZONE_ID")]

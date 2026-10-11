@@ -11,9 +11,16 @@ struct FakeIp {
     v6: Option<IpAddr>,
 }
 impl IPAddr for FakeIp {
-    fn get_global_ip_addr(&self, interface: &str) -> Result<IpAddr, Box<dyn Error>> {
+    fn get_global_ip_addr(
+        &self,
+        interface: &str,
+        family: AddressFamily,
+    ) -> Result<IpAddr, Box<dyn Error>> {
         self.events.borrow_mut().push(format!("ip:{interface}"));
-        let address = if interface == "v4" { self.v4 } else { self.v6 };
+        let address = match family {
+            AddressFamily::V4 => self.v4,
+            AddressFamily::V6 => self.v6,
+        };
         address.ok_or_else(|| Box::new(std::io::Error::other("no ip")) as Box<dyn Error>)
     }
 }
@@ -204,7 +211,7 @@ fn dry_run_logs_plans_without_constructing_dns_client() {
 }
 
 #[test]
-fn ip_failure_is_ignored_and_other_side_is_updated() {
+fn ip_failure_is_reported_after_updating_other_side() {
     for fail_v4 in [true, false] {
         let mut s = Scenario::new();
         if fail_v4 {
@@ -212,7 +219,7 @@ fn ip_failure_is_ignored_and_other_side_is_updated() {
         } else {
             s.v6 = None;
         }
-        assert_eq!(s.run(), Ok(()));
+        assert_eq!(s.run(), Err(AppError::Logged));
         assert_eq!(
             s.patches(),
             if fail_v4 {
@@ -221,37 +228,52 @@ fn ip_failure_is_ignored_and_other_side_is_updated() {
                 vec!["patch:A:a:8.8.8.8:name"]
             }
         );
-        assert!(s.errors().is_empty());
+        assert_eq!(
+            s.errors(),
+            if fail_v4 {
+                vec!["error:Failed to discover A address on interface v4: no ip"]
+            } else {
+                vec!["error:Failed to discover AAAA address on interface v6: no ip"]
+            }
+        );
     }
 }
 
 #[test]
-fn no_addresses_still_fetches_and_filters_records() {
-    let mut s = Scenario::new();
-    s.v4 = None;
-    s.v6 = None;
-    assert_eq!(s.run(), Ok(()));
-    assert_eq!(
-        *s.events.borrow(),
-        vec!["ip:v4", "ip:v6", "logger_factory", "dns_factory", "get"]
-    );
-    s.records = json!({"result":[]});
-    assert_eq!(s.run(), Err(AppError::Logged));
-    assert_eq!(
-        s.errors(),
-        vec!["error:Failed to find record from response"]
-    );
-    assert!(s.patches().is_empty());
+fn no_addresses_fail_without_constructing_dns_client() {
+    for dry_run in [false, true] {
+        let mut s = Scenario::new();
+        s.v4 = None;
+        s.v6 = None;
+        s.args.dry_run = dry_run;
+        assert_eq!(s.run(), Err(AppError::Logged));
+        assert_eq!(
+            *s.events.borrow(),
+            vec![
+                "ip:v4",
+                "ip:v6",
+                "logger_factory",
+                "error:Failed to discover A address on interface v4: no ip",
+                "error:Failed to discover AAAA address on interface v6: no ip",
+            ]
+        );
+        assert!(s.patches().is_empty());
+    }
 }
 
 #[test]
-fn dry_run_with_no_addresses_still_initializes_logger_only() {
+fn dry_run_with_one_discovery_failure_logs_other_plan_and_fails() {
     let mut s = Scenario::new();
     s.v4 = None;
-    s.v6 = None;
     s.args.dry_run = true;
-    assert_eq!(s.run(), Ok(()));
-    assert_eq!(*s.events.borrow(), vec!["ip:v4", "ip:v6", "logger_factory"]);
+    assert_eq!(s.run(), Err(AppError::Logged));
+    let events = s.events.borrow();
+    assert!(events
+        .iter()
+        .any(|event| event.starts_with("info:going to update AAAA")));
+    assert!(!events.iter().any(|event| event == "dns_factory"));
+    assert_eq!(s.errors().len(), 1);
+    assert!(s.patches().is_empty());
 }
 
 #[test]
@@ -350,16 +372,30 @@ fn missing_aaaa_keeps_a_update_and_original_error_wording() {
 }
 
 #[test]
-fn address_family_is_not_validated() {
+fn same_interface_updates_both_record_families() {
     let mut s = Scenario::new();
-    s.v4 = Some("2606:4700:4700::1111".parse().unwrap());
-    s.v6 = Some("8.8.8.8".parse().unwrap());
+    s.args.v4_int = "eth0".into();
+    s.args.v6_int = "eth0".into();
     assert_eq!(s.run(), Ok(()));
     assert_eq!(
         s.patches(),
         vec![
-            "patch:A:a:2606:4700:4700::1111:name",
-            "patch:AAAA:aaaa:8.8.8.8:name"
+            "patch:A:a:8.8.8.8:name",
+            "patch:AAAA:aaaa:2606:4700:4700::1111:name",
+        ]
+    );
+}
+
+#[test]
+fn mixed_case_configured_name_finds_and_updates_both_records() {
+    let mut s = Scenario::new();
+    s.args.record_name = "NAME".into();
+    assert_eq!(s.run(), Ok(()));
+    assert_eq!(
+        s.patches(),
+        vec![
+            "patch:A:a:8.8.8.8:NAME",
+            "patch:AAAA:aaaa:2606:4700:4700::1111:NAME",
         ]
     );
 }

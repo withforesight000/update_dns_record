@@ -78,3 +78,17 @@ fn help_and_version_do_not_initialize_runtime_dependencies() {
         format!("update_dns_record {}", env!("CARGO_PKG_VERSION"))
     );
 }
+
+#[test]
+fn help_hides_token_values_but_keeps_environment_variable_name() {
+    for help_flag in ["--help", "-h"] {
+        for token in ["review-only-dummy-token", "dummy token with spaces-日本語"] {
+            let output = cli(&[help_flag], &[("CLOUDFLARE_API_TOKEN", token)]);
+            assert!(output.status.success());
+            let text = String::from_utf8(output.stdout).unwrap();
+            assert!(text.contains("CLOUDFLARE_API_TOKEN"));
+            assert!(!text.contains(token));
+            assert!(output.stderr.is_empty());
+        }
+    }
+}

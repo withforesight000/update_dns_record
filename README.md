@@ -12,6 +12,7 @@
 
 ## Prerequisites
 - To build from source: the pinned Rust nightly toolchain (see `rust-toolchain.toml`).
+- To run the release-workflow regression tests: Python 3, Bash, and `jq`.
 - To use release binaries: GNU/Linux with glibc 2.35 or newer (Ubuntu 22.04 or newer), on amd64 or arm64.
 - An up-to-date system CA certificate store (for example, the `ca-certificates` package on Ubuntu). Starting with 1.1.0, reqwest's Rustls backend validates HTTPS certificates using the platform trust store.
 - A terminal for stdout logging, or a local syslog service for unattended execution.
@@ -57,6 +58,7 @@ You can configure the CLI through command-line flags or the corresponding enviro
 | `--dry-run` | `CLOUDFLARE_DRY_RUN` | When set, log planned updates without sending API requests. |
 
 At least one of `--v4-int` or `--v6-int` must be supplied.
+Help output lists the API token environment variable name but hides its value.
 
 ## Usage
 To update both A and AAAA records using environment variables:
@@ -80,6 +82,7 @@ Run the regression suite and code checks with the pinned toolchain:
 cargo test --locked --all-targets
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
+python3 tests/release_workflow.py
 ```
 
 The update workflow accepts injected IP discovery, DNS operations, and logger
@@ -92,23 +95,25 @@ match the Cargo package version. Tag pushes run checks and release builds,
 verify both archives, upload them with `SHA256SUMS` to a draft, and publish the
 complete release. Separate native jobs download and execute the published
 archives. A failed upload or draft verification leaves the release unpublished;
-a rerun can resume the same draft. Published releases are never overwritten by
-the workflow. Post-publication fixes use a new patch version.
+a rerun searches every release-list page to resume the same draft. Published
+releases are never overwritten by the workflow. Post-publication fixes use a new patch version.
 
 The arm64 CI runner overrides the existing cross-compilation linker setting
 with `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=cc` for native builds.
 The existing Drone configuration remains available.
 
-## Preserved behavior and limitations
+## Behavior and limitations
 
-This refactor intentionally preserves the existing CLI behavior:
-
-- Each configured interface uses its first global IP in the enumeration order.
-  The `--v4-int` and `--v6-int` options select A and AAAA updates respectively,
-  but do not filter the discovered IP by address family. Use interfaces whose
-  first global addresses match the intended record type.
-- IP discovery failures are ignored. Without any discovered IP, a normal run
-  still fetches and filters DNS records but does not patch them.
+- Each configured interface uses its first global IP of the requested family
+  in the enumeration order: IPv4 for A and IPv6 for AAAA. Both options can
+  select the same dual-stack interface.
+- IP discovery failures are logged and produce exit code 1, including in
+  dry-run mode. A normal run still updates any successfully discovered side.
+  Without any discovered IP, the DNS client is not constructed and no API
+  requests are made.
+- DNS lookup reads every API response page before selecting records and
+  compares names without distinguishing ASCII letter case. Duplicate
+  records of the same name and type are rejected, including across pages.
 - A is updated before AAAA. If the second update fails, the first update remains.
 - Malformed API fields and an unavailable syslog service can cause a panic.
 - Dry-run still discovers IPs and initializes logging, but never constructs the

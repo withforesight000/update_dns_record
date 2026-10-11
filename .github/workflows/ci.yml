@@ -37,5 +37,7 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Unit and CLI tests
         run: cargo test --locked --all-targets
+      - name: Release resume regression tests
+        run: python3 tests/release_workflow.py
       - name: Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
