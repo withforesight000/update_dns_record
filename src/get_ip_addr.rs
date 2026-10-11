@@ -1,8 +1,26 @@
 use local_ip_address::list_afinet_netifas;
 use std::{error::Error, fmt, net::IpAddr};
 
+#[derive(Clone, Copy)]
+pub enum AddressFamily {
+    V4,
+    V6,
+}
+impl AddressFamily {
+    pub fn matches(self, ip: IpAddr) -> bool {
+        match self {
+            Self::V4 => ip.is_ipv4(),
+            Self::V6 => ip.is_ipv6(),
+        }
+    }
+}
+
 pub trait IPAddr {
-    fn get_global_ip_addr(&self, interface: &str) -> Result<IpAddr, Box<dyn Error>>;
+    fn get_global_ip_addr(
+        &self,
+        interface: &str,
+        family: AddressFamily,
+    ) -> Result<IpAddr, Box<dyn Error>>;
 }
 
 pub trait NetworkInterfaces {
@@ -25,9 +43,13 @@ impl<N: NetworkInterfaces> LocalIPAddressClient<N> {
     }
 }
 impl<N: NetworkInterfaces> IPAddr for LocalIPAddressClient<N> {
-    fn get_global_ip_addr(&self, interface: &str) -> Result<IpAddr, Box<dyn Error>> {
+    fn get_global_ip_addr(
+        &self,
+        interface: &str,
+        family: AddressFamily,
+    ) -> Result<IpAddr, Box<dyn Error>> {
         for (name, ip) in self.network_interfaces.list()? {
-            if name == interface && ip.is_global() {
+            if name == interface && ip.is_global() && family.matches(ip) {
                 return Ok(ip);
             }
         }
@@ -60,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn chooses_first_global_ip_on_exact_interface_without_family_filter() {
+    fn chooses_first_global_ip_of_requested_family_on_exact_interface() {
         let client = LocalIPAddressClient::new(FakeInterfaces(vec![
             ("eth01", "8.8.8.8"),
             ("eth0", "127.0.0.1"),
@@ -70,8 +92,16 @@ mod tests {
             ("eth0", "1.1.1.1"),
         ]));
         assert_eq!(
-            client.get_global_ip_addr("eth0").unwrap(),
+            client
+                .get_global_ip_addr("eth0", AddressFamily::V6)
+                .unwrap(),
             "2606:4700:4700::1111".parse::<IpAddr>().unwrap()
+        );
+        assert_eq!(
+            client
+                .get_global_ip_addr("eth0", AddressFamily::V4)
+                .unwrap(),
+            "1.1.1.1".parse::<IpAddr>().unwrap()
         );
     }
 
@@ -81,10 +111,11 @@ mod tests {
             vec![],
             vec![("other", "8.8.8.8")],
             vec![("eth0", "10.0.0.1")],
+            vec![("eth0", "2606:4700:4700::1111")],
         ] {
             assert_eq!(
                 LocalIPAddressClient::new(FakeInterfaces(interfaces))
-                    .get_global_ip_addr("eth0")
+                    .get_global_ip_addr("eth0", AddressFamily::V4)
                     .unwrap_err()
                     .to_string(),
                 "Mock network error"
@@ -102,7 +133,7 @@ mod tests {
         }
         assert_eq!(
             LocalIPAddressClient::new(FailingInterfaces)
-                .get_global_ip_addr("eth0")
+                .get_global_ip_addr("eth0", AddressFamily::V4)
                 .unwrap_err()
                 .to_string(),
             "enumeration failed"

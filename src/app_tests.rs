@@ -11,9 +11,16 @@ struct FakeIp {
     v6: Option<IpAddr>,
 }
 impl IPAddr for FakeIp {
-    fn get_global_ip_addr(&self, interface: &str) -> Result<IpAddr, Box<dyn Error>> {
+    fn get_global_ip_addr(
+        &self,
+        interface: &str,
+        family: AddressFamily,
+    ) -> Result<IpAddr, Box<dyn Error>> {
         self.events.borrow_mut().push(format!("ip:{interface}"));
-        let address = if interface == "v4" { self.v4 } else { self.v6 };
+        let address = match family {
+            AddressFamily::V4 => self.v4,
+            AddressFamily::V6 => self.v6,
+        };
         address.ok_or_else(|| Box::new(std::io::Error::other("no ip")) as Box<dyn Error>)
     }
 }
@@ -350,16 +357,16 @@ fn missing_aaaa_keeps_a_update_and_original_error_wording() {
 }
 
 #[test]
-fn address_family_is_not_validated() {
+fn same_interface_updates_both_record_families() {
     let mut s = Scenario::new();
-    s.v4 = Some("2606:4700:4700::1111".parse().unwrap());
-    s.v6 = Some("8.8.8.8".parse().unwrap());
+    s.args.v4_int = "eth0".into();
+    s.args.v6_int = "eth0".into();
     assert_eq!(s.run(), Ok(()));
     assert_eq!(
         s.patches(),
         vec![
-            "patch:A:a:2606:4700:4700::1111:name",
-            "patch:AAAA:aaaa:8.8.8.8:name"
+            "patch:A:a:8.8.8.8:name",
+            "patch:AAAA:aaaa:2606:4700:4700::1111:name",
         ]
     );
 }

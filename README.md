@@ -99,14 +99,11 @@ The arm64 CI runner overrides the existing cross-compilation linker setting
 with `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=cc` for native builds.
 The existing Drone configuration remains available.
 
-## Preserved behavior and limitations
+## Behavior and limitations
 
-This refactor intentionally preserves the existing CLI behavior:
-
-- Each configured interface uses its first global IP in the enumeration order.
-  The `--v4-int` and `--v6-int` options select A and AAAA updates respectively,
-  but do not filter the discovered IP by address family. Use interfaces whose
-  first global addresses match the intended record type.
+- Each configured interface uses its first global IP of the requested family
+  in the enumeration order: IPv4 for A and IPv6 for AAAA. Both options can
+  select the same dual-stack interface.
 - IP discovery failures are ignored. Without any discovered IP, a normal run
   still fetches and filters DNS records but does not patch them.
 - A is updated before AAAA. If the second update fails, the first update remains.
