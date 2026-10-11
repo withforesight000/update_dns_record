@@ -116,6 +116,181 @@ fn handle_response(
 }
 
 #[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use crate::http_client::MockHttpClient;
+    use mockall::predicate::eq;
+
+    fn response(status: u16, body: &str) -> reqwest::blocking::Response {
+        http::Response::builder()
+            .status(status)
+            .body(body.to_owned())
+            .unwrap()
+            .into()
+    }
+
+    #[test]
+    fn requests_preserve_url_token_and_patch_body() {
+        let mut http = MockHttpClient::new();
+        http.expect_get_with_bearer_token()
+            .with(
+                eq("https://api.example/zones/zone/dns_records"),
+                eq("token"),
+            )
+            .times(1)
+            .return_once(|_, _| Ok(response(200, r#"{"result":[]}"#)));
+        http.expect_patch_with_bearer_token()
+            .with(
+                eq("https://api.example/zones/zone/dns_records/id"),
+                eq("token"),
+                eq(json!({"content":"8.8.8.8","name":"example.com","type":"A"})),
+            )
+            .times(1)
+            .return_once(|_, _, _| Ok(response(200, r#"{"result":{}}"#)));
+        let client = CloudflareClient::new(
+            http,
+            "token".into(),
+            "https://api.example".into(),
+            "zone".into(),
+        );
+        client.get_dns_records().unwrap();
+        client
+            .update_record(&json!("id"), &json!("8.8.8.8"), "example.com", "A")
+            .unwrap();
+    }
+
+    #[test]
+    fn invalid_json_is_a_body_error_for_get_and_patch() {
+        for patch in [false, true] {
+            let mut http = MockHttpClient::new();
+            if patch {
+                http.expect_patch_with_bearer_token()
+                    .times(1)
+                    .return_once(|_, _, _| Ok(response(200, "invalid")));
+            } else {
+                http.expect_get_with_bearer_token()
+                    .times(1)
+                    .return_once(|_, _| Ok(response(200, "invalid")));
+            }
+            let client = CloudflareClient::new(
+                http,
+                "token".into(),
+                "https://api.example".into(),
+                "zone".into(),
+            );
+            let result = if patch {
+                client.update_record(&json!("id"), &json!("ip"), "name", "A")
+            } else {
+                client.get_dns_records()
+            };
+            assert!(matches!(result, Err(ClientError::BodyError(_))));
+        }
+    }
+
+    #[test]
+    fn only_200_is_success_and_error_body_is_preserved() {
+        for status in [201, 204, 401, 403, 429, 500] {
+            let error = handle_response(Ok(response(status, "failure body"))).unwrap_err();
+            match error {
+                ClientError::StatusCodeError(code, body) => {
+                    assert_eq!(code.as_u16(), status);
+                    assert_eq!(body, "failure body");
+                }
+                _ => panic!("expected status error"),
+            }
+        }
+    }
+
+    #[test]
+    fn name_filter_is_exact_and_keeps_order_and_both_types() {
+        let records = serde_json::from_value(json!({"result":[
+            {"id":"first","name":"example.com","type":"AAAA"},
+            {"id":"other","name":"Example.com","type":"A"},
+            {"id":"last","name":"example.com","type":"A"}
+        ]}))
+        .unwrap();
+        let matches = filter_by_record_name(records, "example.com").unwrap();
+        assert_eq!(
+            matches
+                .iter()
+                .map(|r| r["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["first", "last"]
+        );
+        assert_eq!(
+            filter_by_record_type(&matches, "AAAA").unwrap()["id"],
+            "first"
+        );
+    }
+
+    #[test]
+    fn empty_or_non_array_result_is_not_found() {
+        for result in [json!([]), json!(null), json!({})] {
+            assert!(matches!(
+                filter_by_record_name(
+                    serde_json::from_value(json!({"result":result})).unwrap(),
+                    "name"
+                ),
+                Err(ClientError::RecordNotFound)
+            ));
+        }
+        assert!(matches!(
+            filter_by_record_type(&[], "A"),
+            Err(ClientError::RecordNotFound)
+        ));
+    }
+
+    #[test]
+    fn duplicate_type_error_preserves_matching_records() {
+        let records = vec![
+            json!({"id":"one","type":"A"}),
+            json!({"id":"skip","type":"AAAA"}),
+            json!({"id":"two","type":"A"}),
+        ];
+        match filter_by_record_type(&records, "A").unwrap_err() {
+            ClientError::MultipleRecordsFound(found) => {
+                assert_eq!(found, vec![records[0].clone(), records[2].clone()])
+            }
+            _ => panic!("expected duplicate error"),
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn missing_result_keeps_existing_panic() {
+        let _ = filter_by_record_name(HashMap::new(), "name");
+    }
+
+    #[test]
+    #[should_panic]
+    fn non_string_record_id_keeps_existing_panic() {
+        let client = CloudflareClient::new(
+            MockHttpClient::new(),
+            "token".into(),
+            "base".into(),
+            "zone".into(),
+        );
+        let _ = client.update_record(&json!(42), &json!("ip"), "name", "A");
+    }
+
+    #[test]
+    fn error_messages_are_preserved() {
+        assert_eq!(
+            ClientError::RecordNotFound.to_string(),
+            "Failed to find record from response"
+        );
+        assert_eq!(
+            ClientError::MultipleRecordsFound(vec![]).to_string(),
+            "Failed to filter to one record: []"
+        );
+        assert_eq!(
+            ClientError::NetworkError(Box::new(std::io::Error::other("offline"))).to_string(),
+            "Failed to make request to Cloudflare: offline"
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::http_client::MockHttpClient;
