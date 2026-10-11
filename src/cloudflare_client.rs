@@ -44,7 +44,32 @@ impl<T: HttpClient> CloudflareClient<T> {
         let response = self
             .client
             .get_with_bearer_token(&url, self.api_token.as_str());
-        handle_response(response)
+        let mut body = handle_response(response)?;
+        let total_pages = body
+            .get("result_info")
+            .and_then(|info| info.get("total_pages"))
+            .and_then(Value::as_u64)
+            .unwrap_or(1);
+        if total_pages > 1 {
+            let mut records = body
+                .get("result")
+                .and_then(Value::as_array)
+                .cloned()
+                .ok_or(ClientError::InvalidResponse("DNS result is not an array"))?;
+            for page in 2..=total_pages {
+                let response = self
+                    .client
+                    .get_with_bearer_token(&format!("{url}?page={page}"), self.api_token.as_str());
+                let next = handle_response(response)?;
+                let page_records = next
+                    .get("result")
+                    .and_then(Value::as_array)
+                    .ok_or(ClientError::InvalidResponse("DNS result is not an array"))?;
+                records.extend(page_records.iter().cloned());
+            }
+            body.insert("result".into(), Value::Array(records));
+        }
+        Ok(body)
     }
 
     pub fn update_record(
@@ -184,6 +209,79 @@ mod contract_tests {
         client
             .update_record(&json!("id"), &json!("8.8.8.8"), "example.com", "A")
             .unwrap();
+    }
+
+    #[test]
+    fn pagination_finds_later_records_and_detects_duplicates_across_pages() {
+        let mut http = MockHttpClient::new();
+        let mut sequence = mockall::Sequence::new();
+        for (url, body) in [
+            (
+                "https://api.example/zones/zone/dns_records",
+                json!({
+                    "result":[{"id":"a1","name":"example.com","type":"A"}],
+                    "result_info":{"total_pages":3}
+                }),
+            ),
+            (
+                "https://api.example/zones/zone/dns_records?page=2",
+                json!({
+                    "result":[{"id":"v6","name":"example.com","type":"AAAA"}]
+                }),
+            ),
+            (
+                "https://api.example/zones/zone/dns_records?page=3",
+                json!({
+                    "result":[{"id":"a2","name":"example.com","type":"A"}]
+                }),
+            ),
+        ] {
+            http.expect_get_with_bearer_token()
+                .with(eq(url), eq("token"))
+                .times(1)
+                .in_sequence(&mut sequence)
+                .return_once(move |_, _| Ok(response(200, &body.to_string())));
+        }
+        let client = CloudflareClient::new(
+            http,
+            "token".into(),
+            "https://api.example".into(),
+            "zone".into(),
+        );
+        let records =
+            filter_by_record_name(client.get_dns_records().unwrap(), "example.com").unwrap();
+        assert_eq!(filter_by_record_type(&records, "AAAA").unwrap()["id"], "v6");
+        assert!(
+            matches!(filter_by_record_type(&records, "A"), Err(ClientError::MultipleRecordsFound(records)) if records.len() == 2)
+        );
+    }
+
+    #[test]
+    fn pagination_failure_never_returns_partial_records() {
+        for (status, body) in [
+            (500, "failed"),
+            (200, "invalid json"),
+            (200, r#"{"result":null}"#),
+        ] {
+            let mut http = MockHttpClient::new();
+            let mut sequence = mockall::Sequence::new();
+            http.expect_get_with_bearer_token()
+                .times(1)
+                .in_sequence(&mut sequence)
+                .return_once(|_, _| {
+                    Ok(response(
+                        200,
+                        r#"{"result":[],"result_info":{"total_pages":2}}"#,
+                    ))
+                });
+            http.expect_get_with_bearer_token()
+                .with(eq("base/zones/zone/dns_records?page=2"), eq("token"))
+                .times(1)
+                .in_sequence(&mut sequence)
+                .return_once(move |_, _| Ok(response(status, body)));
+            let client = CloudflareClient::new(http, "token".into(), "base".into(), "zone".into());
+            assert!(client.get_dns_records().is_err());
+        }
     }
 
     #[test]

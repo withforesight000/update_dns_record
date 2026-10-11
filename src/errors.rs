@@ -6,6 +6,7 @@ pub enum ClientError {
     // ResponseError(reqwest::Error),
     StatusCodeError(reqwest::StatusCode, String),
     BodyError(reqwest::Error),
+    InvalidResponse(&'static str),
     RecordNotFound,
     MultipleRecordsFound(Vec<serde_json::Value>),
 }
@@ -28,6 +29,9 @@ impl fmt::Display for ClientError {
             }
             ClientError::BodyError(error) => {
                 write!(f, "Failed to fetch body from Cloudflare: {}", error)
+            }
+            ClientError::InvalidResponse(message) => {
+                write!(f, "Invalid Cloudflare response: {message}")
             }
             ClientError::RecordNotFound => {
                 write!(f, "Failed to find record from response")

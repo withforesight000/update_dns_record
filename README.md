@@ -109,6 +109,8 @@ The existing Drone configuration remains available.
   dry-run mode. A normal run still updates any successfully discovered side.
   Without any discovered IP, the DNS client is not constructed and no API
   requests are made.
+- DNS lookup reads every API response page before selecting records. Duplicate
+  records of the same name and type are rejected, including across pages.
 - A is updated before AAAA. If the second update fails, the first update remains.
 - Malformed API fields and an unavailable syslog service can cause a panic.
 - Dry-run still discovers IPs and initializes logging, but never constructs the
