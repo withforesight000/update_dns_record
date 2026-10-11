@@ -1,7 +1,7 @@
 # Update DNS Record
 
 ## Overview
-`update_dns_record` is a Rust CLI utility that keeps a Cloudflare DNS record in sync with the global IP address assigned to a local network interface. The application discovers the interface's public IPv4 and/or IPv6 address and updates the matching A and AAAA records in a Cloudflare zone using the Cloudflare v4 API.
+`update_dns_record` is a Rust CLI utility that keeps a Cloudflare DNS record in sync with the global IP address assigned to a local network interface. The application discovers a global IP address on each configured interface and updates the matching A and AAAA records in a Cloudflare zone using the Cloudflare v4 API.
 
 ## Features
 - Resolves the global IP address for a specified local network interface using `local-ip-address`.
@@ -11,14 +11,34 @@
 - Logs to stdout when attached to a terminal and falls back to syslog for unattended environments.
 
 ## Prerequisites
-- Rust nightly toolchain (see `rust-toolchain.toml`).
+- To build from source: the pinned Rust nightly toolchain (see `rust-toolchain.toml`).
+- To use release binaries: GNU/Linux with glibc 2.35 or newer (Ubuntu 22.04 or newer), on amd64 or arm64.
+- A terminal for stdout logging, or a local syslog service for unattended execution.
 - Cloudflare API token with permissions to read and edit DNS records in the target zone.
 
 ## Installation
-Clone the repository and build the binary with Cargo:
+Download the archive for your architecture and `SHA256SUMS` from
+[GitHub Releases](https://github.com/withforesight000/update_dns_record/releases).
+Archives are named `update_dns_record-<version>-linux-amd64.tar.gz` and
+`update_dns_record-<version>-linux-arm64.tar.gz`. Each contains the executable
+`update_dns_record`.
+
+For example, with both archives and `SHA256SUMS` in the current directory:
 
 ```bash
-cargo build --release
+sha256sum --check SHA256SUMS
+tar -xzf update_dns_record-1.0.0-linux-arm64.tar.gz
+./update_dns_record --version
+```
+
+Use the amd64 archive on x86-64 systems. Binaries are built and executed on
+Ubuntu 22.04 runners; older glibc environments, musl/Alpine, macOS, and Windows
+are not supported by these release archives.
+
+Alternatively, clone the repository and build the binary with Cargo:
+
+```bash
+cargo build --release --locked
 ```
 
 The compiled binary will be located at `target/release/update_dns_record`.
@@ -53,11 +73,45 @@ cargo run --release -- --dry-run
 Remove `--dry-run` to apply the changes. Use `cargo run -- --help` to view the full CLI reference.
 
 ## Development
-Run the test suite to validate the client and helper utilities:
+Run the regression suite and code checks with the pinned toolchain:
 
 ```bash
-cargo test
+cargo test --locked --all-targets
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
 ```
+
+The update workflow accepts injected IP discovery, DNS operations, and logger
+factories. NIC enumeration is also injected. Tests use in-memory responses and
+fake dependencies; they do not contact Cloudflare, change DNS, or require syslog.
+
+GitHub Actions runs these checks on native Linux amd64 and arm64 runners for
+branch pushes and pull requests. A numeric version tag such as `1.0.0` must
+match the Cargo package version. Tag pushes run checks and release builds,
+verify both archives, upload them with `SHA256SUMS` to a draft, and publish the
+complete release. Separate native jobs download and execute the published
+archives. A failed upload or draft verification leaves the release unpublished;
+a rerun can resume the same draft. Published releases are never overwritten by
+the workflow. Post-publication fixes use a new patch version.
+
+The arm64 CI runner overrides the existing cross-compilation linker setting
+with `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=cc` for native builds.
+The existing Drone configuration remains available.
+
+## Preserved behavior and limitations
+
+This refactor intentionally preserves the existing CLI behavior:
+
+- Each configured interface uses its first global IP in the enumeration order.
+  The `--v4-int` and `--v6-int` options select A and AAAA updates respectively,
+  but do not filter the discovered IP by address family. Use interfaces whose
+  first global addresses match the intended record type.
+- IP discovery failures are ignored. Without any discovered IP, a normal run
+  still fetches and filters DNS records but does not patch them.
+- A is updated before AAAA. If the second update fails, the first update remains.
+- Malformed API fields and an unavailable syslog service can cause a panic.
+- Dry-run still discovers IPs and initializes logging, but never constructs the
+  DNS client or makes API calls.
 
 ## License
 This project is provided as-is without an explicit license. Consult the repository owner before production use.

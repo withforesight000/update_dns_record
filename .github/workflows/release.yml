@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags: ['[0-9]*.[0-9]*.[0-9]*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate tag and package version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          test "$TAG" = "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+  checks:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+  build:
+    needs: [version, checks]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+      TARGET: ${{ matrix.target }}
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: cc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: |
+          toolchain=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$toolchain" --profile minimal --target "$TARGET"
+      - name: Build and package
+        run: |
+          cargo build --release --locked --target "$TARGET"
+          mkdir -p dist
+          install -m 755 "target/$TARGET/release/update_dns_record" dist/update_dns_record
+          tar -czf "dist/update_dns_record-$VERSION-linux-$ARCH.tar.gz" -C dist update_dns_record
+          rm dist/update_dns_record
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS
+          bash ../.github/scripts/verify-package.sh "$VERSION" "$ARCH"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG_COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: linux-*
+          path: artifacts
+      - name: Assemble checked assets
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            asset="update_dns_record-$VERSION-linux-$arch.tar.gz"
+            test -f "artifacts/linux-$arch/$asset"
+            cp "artifacts/linux-$arch/$asset" dist/
+          done
+          cat artifacts/linux-amd64/SHA256SUMS artifacts/linux-arm64/SHA256SUMS > dist/SHA256SUMS
+          test "$(wc -l < dist/SHA256SUMS)" -eq 2
+          cd dist
+          sha256sum --check --strict SHA256SUMS
+      - name: Create or resume draft and upload assets
+        run: |
+          gh api "repos/$GH_REPO/releases" > releases.json
+          release_id=$(jq -r --arg tag "$VERSION" '.[] | select(.tag_name == $tag) | .id' releases.json)
+          if test -n "$release_id"; then
+            test "$(jq -r --arg tag "$VERSION" '.[] | select(.tag_name == $tag) | .draft' releases.json)" = true
+            test "$(jq -r --arg tag "$VERSION" '.[] | select(.tag_name == $tag) | .target_commitish' releases.json)" = "$TAG_COMMIT"
+          else
+            gh release create "$VERSION" --verify-tag --target "$TAG_COMMIT" --title "$VERSION" --draft --generate-notes
+          fi
+          gh release upload "$VERSION" dist/*.tar.gz dist/SHA256SUMS --clobber
+      - name: Download and check draft assets
+        run: |
+          mkdir downloaded
+          gh release download "$VERSION" --dir downloaded
+          test "$(find downloaded -maxdepth 1 -type f | wc -l)" -eq 3
+          cmp dist/SHA256SUMS downloaded/SHA256SUMS
+          cd downloaded
+          sha256sum --check --strict SHA256SUMS
+          bash ../.github/scripts/verify-package.sh "$VERSION" amd64
+          tar -xzf "update_dns_record-$VERSION-linux-arm64.tar.gz"
+          readelf -h update_dns_record | grep -F AArch64
+      - name: Publish complete release
+        run: gh release edit "$VERSION" --draft=false --latest
+  verify-published:
+    needs: [version, publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.version.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download and execute published archive
+        run: |
+          mkdir downloaded
+          gh release download "$VERSION" --dir downloaded --pattern "update_dns_record-$VERSION-linux-$ARCH.tar.gz" --pattern SHA256SUMS
+          cd downloaded
+          bash ../.github/scripts/verify-package.sh "$VERSION" "$ARCH"
