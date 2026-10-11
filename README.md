@@ -29,7 +29,7 @@ For example, with both archives and `SHA256SUMS` in the current directory:
 
 ```bash
 sha256sum --check SHA256SUMS
-tar -xzf update_dns_record-1.1.0-linux-arm64.tar.gz
+tar -xzf update_dns_record-1.2.0-linux-arm64.tar.gz
 ./update_dns_record --version
 ```
 
