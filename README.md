@@ -105,8 +105,10 @@ The existing Drone configuration remains available.
 - Each configured interface uses its first global IP of the requested family
   in the enumeration order: IPv4 for A and IPv6 for AAAA. Both options can
   select the same dual-stack interface.
-- IP discovery failures are ignored. Without any discovered IP, a normal run
-  still fetches and filters DNS records but does not patch them.
+- IP discovery failures are logged and produce exit code 1, including in
+  dry-run mode. A normal run still updates any successfully discovered side.
+  Without any discovered IP, the DNS client is not constructed and no API
+  requests are made.
 - A is updated before AAAA. If the second update fails, the first update remains.
 - Malformed API fields and an unavailable syslog service can cause a panic.
 - Dry-run still discovers IPs and initializes logging, but never constructs the

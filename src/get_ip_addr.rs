@@ -61,8 +61,7 @@ impl<N: NetworkInterfaces> IPAddr for LocalIPAddressClient<N> {
 struct NoGlobalIp;
 impl fmt::Display for NoGlobalIp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Keep the original error text; callers currently ignore this error.
-        write!(f, "Mock network error")
+        write!(f, "No global IP address of the requested family found")
     }
 }
 impl Error for NoGlobalIp {}
@@ -118,7 +117,7 @@ mod tests {
                     .get_global_ip_addr("eth0", AddressFamily::V4)
                     .unwrap_err()
                     .to_string(),
-                "Mock network error"
+                "No global IP address of the requested family found"
             );
         }
     }
