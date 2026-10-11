@@ -57,6 +57,7 @@ You can configure the CLI through command-line flags or the corresponding enviro
 | `--dry-run` | `CLOUDFLARE_DRY_RUN` | When set, log planned updates without sending API requests. |
 
 At least one of `--v4-int` or `--v6-int` must be supplied.
+Help output lists the API token environment variable name but hides its value.
 
 ## Usage
 To update both A and AAAA records using environment variables:
