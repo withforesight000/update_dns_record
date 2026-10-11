@@ -116,7 +116,12 @@ pub fn filter_by_record_name(
     let record = dns_records["result"].as_array().map(|array| {
         array
             .iter()
-            .filter(|record| record["name"].as_str().unwrap() == record_name)
+            .filter(|record| {
+                record["name"]
+                    .as_str()
+                    .unwrap()
+                    .eq_ignore_ascii_case(record_name)
+            })
             .cloned()
             .collect::<Vec<Value>>()
     });
@@ -327,25 +332,27 @@ mod contract_tests {
     }
 
     #[test]
-    fn name_filter_is_exact_and_keeps_order_and_both_types() {
+    fn name_filter_ignores_ascii_case_and_keeps_order_and_both_types() {
         let records = serde_json::from_value(json!({"result":[
             {"id":"first","name":"example.com","type":"AAAA"},
             {"id":"other","name":"Example.com","type":"A"},
             {"id":"last","name":"example.com","type":"A"}
         ]}))
         .unwrap();
-        let matches = filter_by_record_name(records, "example.com").unwrap();
+        let matches = filter_by_record_name(records, "EXAMPLE.COM").unwrap();
         assert_eq!(
             matches
                 .iter()
                 .map(|r| r["id"].as_str().unwrap())
                 .collect::<Vec<_>>(),
-            vec!["first", "last"]
+            vec!["first", "other", "last"]
         );
         assert_eq!(
             filter_by_record_type(&matches, "AAAA").unwrap()["id"],
             "first"
         );
+        assert!(matches!(filter_by_record_type(&matches, "A"),
+            Err(ClientError::MultipleRecordsFound(records)) if records.len() == 2));
     }
 
     #[test]

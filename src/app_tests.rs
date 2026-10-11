@@ -385,3 +385,17 @@ fn same_interface_updates_both_record_families() {
         ]
     );
 }
+
+#[test]
+fn mixed_case_configured_name_finds_and_updates_both_records() {
+    let mut s = Scenario::new();
+    s.args.record_name = "NAME".into();
+    assert_eq!(s.run(), Ok(()));
+    assert_eq!(
+        s.patches(),
+        vec![
+            "patch:A:a:8.8.8.8:NAME",
+            "patch:AAAA:aaaa:2606:4700:4700::1111:NAME",
+        ]
+    );
+}
